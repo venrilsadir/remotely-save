@@ -77,7 +77,10 @@ module.exports = {
       },
       {
         test: /\.tsx?$/,
-        use: "ts-loader",
+        loader: "ts-loader",
+        options: {
+          transpileOnly: true,
+        },
         exclude: /node_modules/,
       },
       {
@@ -121,7 +124,7 @@ module.exports = {
       // timers: require.resolve("timers-browserify"),
       tls: false,
       // tty: require.resolve("tty-browserify"),
-      url: require.resolve("url/"),
+      // url: require.resolve("url/"),
       // util: require.resolve("util"),
       // vm: require.resolve("vm-browserify"),
       vm: false,
@@ -130,6 +133,8 @@ module.exports = {
   },
   externals: {
     obsidian: "commonjs2 obsidian",
+    url: "commonjs url",
+    "node:url": "commonjs url",
   },
   optimization: {
     minimize: true,

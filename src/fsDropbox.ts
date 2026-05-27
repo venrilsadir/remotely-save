@@ -18,6 +18,69 @@ import {
   headersToRecord,
 } from "./misc";
 
+import { requestUrl } from "obsidian";
+
+export const obsidianFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const url = typeof input === "string" ? input : (input as any).url || input.toString();
+  const method = init?.method || "GET";
+  
+  const headers: Record<string, string> = {};
+  if (init?.headers) {
+    if (init.headers instanceof Headers) {
+      init.headers.forEach((value, key) => {
+        headers[key] = value;
+      });
+    } else if (Array.isArray(init.headers)) {
+      for (const [key, value] of init.headers) {
+        headers[key] = value;
+      }
+    } else {
+      for (const key of Object.keys(init.headers)) {
+        headers[key] = (init.headers as any)[key];
+      }
+    }
+  }
+
+  let body = init?.body;
+  let contentType: string | undefined = undefined;
+  if (headers["content-type"]) {
+    contentType = headers["content-type"];
+  }
+
+  if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
+    if (ArrayBuffer.isView(body)) {
+      body = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
+    }
+  } else if (body instanceof Blob) {
+    body = await body.arrayBuffer();
+  }
+
+  const res = await requestUrl({
+    url: url,
+    method: method,
+    headers: headers,
+    body: body as any,
+    contentType: contentType,
+    throw: false,
+  });
+
+  const resHeaders = new Headers();
+  for (const key of Object.keys(res.headers)) {
+    resHeaders.set(key, res.headers[key]);
+  }
+
+  return {
+    status: res.status,
+    statusText: "",
+    ok: res.status >= 200 && res.status < 300,
+    headers: resHeaders,
+    json: async () => res.json,
+    text: async () => res.text,
+    arrayBuffer: async () => res.arrayBuffer,
+    blob: async () => new Blob([res.arrayBuffer]),
+  } as Response;
+};
+
 export { Dropbox } from "dropbox";
 
 export const DEFAULT_DROPBOX_CONFIG: DropboxConfig = {
@@ -182,13 +245,28 @@ async function retryReq<T>(
       }
       return await reqFunc();
     } catch (e: unknown) {
-      const err = e as DropboxResponseError<ErrSubType>;
+      const err = e as DropboxResponseError<any>;
       if (err.status === undefined) {
         // then the err is not DropboxResponseError
         throw err;
       }
-      if (err.status !== 429) {
-        // then the err is not "too many requests", give up
+
+      let shouldRetry = false;
+      if (err.status === 429) {
+        shouldRetry = true;
+      } else if (err.status === 409) {
+        const errStr = JSON.stringify(err.error || {}).toLowerCase();
+        if (
+          errStr.includes("too_many_write_operations") ||
+          errStr.includes("write_conflict") ||
+          errStr.includes("lock_acquisition_failed") ||
+          errStr.includes("too_many_requests")
+        ) {
+          shouldRetry = true;
+        }
+      }
+
+      if (!shouldRetry) {
         throw err;
       }
 
@@ -197,7 +275,7 @@ async function retryReq<T>(
         throw new Error(
           `${
             extraHint === "" ? "" : extraHint + ": "
-          }"429 too many requests", after retrying for ${
+          }"${err.status} error", after retrying for ${
             idx + 1
           } times still failed.`
         );
@@ -205,7 +283,7 @@ async function retryReq<T>(
 
       const headers = headersToRecord(err.headers);
       const svrSec =
-        err.error.error.retry_after ||
+        err.error?.error?.retry_after ||
         Number.parseInt(headers["retry-after"] || "1") ||
         1;
       const fallbackSec = waitSeconds[idx];
@@ -238,6 +316,7 @@ export const getAuthUrlAndVerifier = async (
 ) => {
   const auth = new DropboxAuth({
     clientId: appKey,
+    fetch: obsidianFetch,
   });
 
   const callback = needManualPatse
@@ -278,7 +357,7 @@ export const sendAuthReq = async (
   errorCallBack: any
 ) => {
   try {
-    const resp1 = await fetch("https://api.dropboxapi.com/oauth2/token", {
+    const resp1 = await obsidianFetch("https://api.dropboxapi.com/oauth2/token", {
       method: "POST",
       body: new URLSearchParams({
         code: authCode,
@@ -304,7 +383,7 @@ export const sendRefreshTokenReq = async (
 ) => {
   try {
     console.info("start auto getting refreshed Dropbox access token.");
-    const resp1 = await fetch("https://api.dropboxapi.com/oauth2/token", {
+    const resp1 = await obsidianFetch("https://api.dropboxapi.com/oauth2/token", {
       method: "POST",
       body: new URLSearchParams({
         grant_type: "refresh_token",
@@ -392,6 +471,7 @@ export class FakeFsDropbox extends FakeFs {
       this.dropbox = new Dropbox({
         accessToken: this.dropboxConfig.accessToken,
         customHeaders: customHeaders,
+        fetch: obsidianFetch,
       });
     } else {
       if (this.dropboxConfig.refreshToken === "") {
@@ -412,6 +492,7 @@ export class FakeFsDropbox extends FakeFs {
       this.dropbox = new Dropbox({
         accessToken: this.dropboxConfig.accessToken,
         customHeaders: customHeaders,
+        fetch: obsidianFetch,
       });
     }
 
@@ -583,7 +664,12 @@ export class FakeFsDropbox extends FakeFs {
         if (err.status === undefined) {
           throw err;
         }
-        if (err.status === 409) {
+        const errStr = JSON.stringify(err || {}).toLowerCase();
+        if (
+          err.status === 409 &&
+          (errStr.includes("conflict") || errStr.includes("already_exists")) &&
+          !errStr.includes("too_many_write_operations")
+        ) {
           // pass
           this.foldersCreatedBefore?.add(key);
         } else {
@@ -712,6 +798,7 @@ export class FakeFsDropbox extends FakeFs {
     } catch (err) {
       console.error("some error while moving");
       console.error(err);
+      throw err;
     }
   }
 
@@ -730,9 +817,16 @@ export class FakeFsDropbox extends FakeFs {
           }),
         key // just a hint here
       );
-    } catch (err) {
+    } catch (err: any) {
+      const errStr = JSON.stringify(err || {}).toLowerCase();
+      if (err?.status === 409 && (errStr.includes("path_lookup/not_found") || errStr.includes("not_found"))) {
+        // if file does not exist on remote, we consider deletion successful
+        console.warn(`file/folder ${key} not found on remote, skipping deletion error`);
+        return;
+      }
       console.error("some error while deleting");
       console.error(err);
+      throw err;
     }
   }
 

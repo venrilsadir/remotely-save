@@ -19,7 +19,7 @@
   "syncrun_step7skip": "7/8 Remotely Save real sync is skipped in dry run mode.",
   "syncrun_step8": "8/8 원격 동기화 완료!",
   "syncrun_shortstep0": "0/2 원격 저장이 드라이 모드에서 실행 중이며 실제 파일 변경이 발생하지 않습니다..",
-  "syncrun_shortstep1": " ({{서비스 유형}}) 으로 Remove Save가 실행되기 시작합니다. ",
+  "syncrun_shortstep1": " ({{serviceType}}) 으로 Remove Save가 실행되기 시작합니다. ",
   "syncrun_shortstep2skip": "2/2 드라이 모드에서 실제 저장 단계로 건너뛰는 중.",
   "syncrun_shortstep2": "2/2 원격 동기화 완료!",
   "syncrun_abort": "{{manifestID}}-{{theDate}}: abort sync, triggerSource={{triggerSource}}, error while {{syncStatus}}",
