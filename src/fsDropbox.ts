@@ -44,8 +44,11 @@ export const obsidianFetch = async (input: RequestInfo | URL, init?: RequestInit
   let body = init?.body;
   let contentType: string | undefined = undefined;
 
-  if (body instanceof URLSearchParams) {
-    body = body.toString();
+  if (
+    body instanceof URLSearchParams ||
+    (body && typeof body === "object" && ((body as any).constructor?.name === "URLSearchParams" || Object.prototype.toString.call(body) === "[object URLSearchParams]"))
+  ) {
+    body = (body as any).toString();
     headers["content-type"] = "application/x-www-form-urlencoded;charset=UTF-8";
   }
 
