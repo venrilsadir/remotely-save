@@ -50,10 +50,11 @@ export const obsidianFetch = async (input: RequestInfo | URL, init?: RequestInit
   ) {
     body = (body as any).toString();
     headers["content-type"] = "application/x-www-form-urlencoded;charset=UTF-8";
+    headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
   }
 
-  if (headers["content-type"]) {
-    contentType = headers["content-type"];
+  if (headers["content-type"] || headers["Content-Type"]) {
+    contentType = headers["content-type"] || headers["Content-Type"];
   }
 
   if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
