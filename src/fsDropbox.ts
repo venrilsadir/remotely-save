@@ -256,16 +256,19 @@ async function retryReq<T>(
       return await reqFunc();
     } catch (e: unknown) {
       const err = e as DropboxResponseError<any>;
-      if (err.status === undefined) {
-        // then the err is not DropboxResponseError
-        throw err;
-      }
-
       let shouldRetry = false;
-      if (err.status === 429) {
+      const errStr = JSON.stringify(e || {}).toLowerCase();
+      const isFailedToFetch = errStr.includes("failed to fetch") || errStr.includes("networkerror") || errStr.includes("typeerror");
+
+      if (err.status === undefined) {
+        if (isFailedToFetch) {
+          shouldRetry = true;
+        } else {
+          throw err;
+        }
+      } else if (err.status === 429) {
         shouldRetry = true;
       } else if (err.status === 409) {
-        const errStr = JSON.stringify(err.error || {}).toLowerCase();
         if (
           errStr.includes("too_many_write_operations") ||
           errStr.includes("write_conflict") ||
@@ -486,7 +489,6 @@ export class FakeFsDropbox extends FakeFs {
       this.dropbox = new Dropbox({
         accessToken: this.dropboxConfig.accessToken,
         customHeaders: customHeaders,
-        fetch: obsidianFetch,
       });
     } else {
       if (this.dropboxConfig.refreshToken === "") {
@@ -507,7 +509,6 @@ export class FakeFsDropbox extends FakeFs {
       this.dropbox = new Dropbox({
         accessToken: this.dropboxConfig.accessToken,
         customHeaders: customHeaders,
-        fetch: obsidianFetch,
       });
     }
 
