@@ -43,6 +43,12 @@ export const obsidianFetch = async (input: RequestInfo | URL, init?: RequestInit
 
   let body = init?.body;
   let contentType: string | undefined = undefined;
+
+  if (body instanceof URLSearchParams) {
+    body = body.toString();
+    headers["content-type"] = "application/x-www-form-urlencoded;charset=UTF-8";
+  }
+
   if (headers["content-type"]) {
     contentType = headers["content-type"];
   }
@@ -367,6 +373,9 @@ export const sendAuthReq = async (
         redirect_uri: `obsidian://${COMMAND_CALLBACK_DROPBOX}`,
       }),
     });
+    if (!resp1.ok) {
+      throw new Error(`Auth failed with status ${resp1.status}: ${await resp1.text()}`);
+    }
     const resp2 = (await resp1.json()) as DropboxSuccessAuthRes;
     return resp2;
   } catch (e) {
@@ -391,6 +400,9 @@ export const sendRefreshTokenReq = async (
         client_id: appKey,
       }),
     });
+    if (!resp1.ok) {
+      throw new Error(`Token refresh failed with status ${resp1.status}: ${await resp1.text()}`);
+    }
     const resp2 = (await resp1.json()) as DropboxSuccessAuthRes;
     console.info("finish auto getting refreshed Dropbox access token.");
     return resp2;
