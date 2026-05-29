@@ -326,7 +326,6 @@ export const getAuthUrlAndVerifier = async (
 ) => {
   const auth = new DropboxAuth({
     clientId: appKey,
-    fetch: obsidianFetch,
   });
 
   const callback = needManualPatse
@@ -367,7 +366,7 @@ export const sendAuthReq = async (
   errorCallBack: any
 ) => {
   try {
-    const resp1 = await obsidianFetch("https://api.dropboxapi.com/oauth2/token", {
+    const resp1 = await fetch("https://api.dropboxapi.com/oauth2/token", {
       method: "POST",
       body: new URLSearchParams({
         code: authCode,
@@ -396,7 +395,7 @@ export const sendRefreshTokenReq = async (
 ) => {
   try {
     console.info("start auto getting refreshed Dropbox access token.");
-    const resp1 = await obsidianFetch("https://api.dropboxapi.com/oauth2/token", {
+    const resp1 = await fetch("https://api.dropboxapi.com/oauth2/token", {
       method: "POST",
       body: new URLSearchParams({
         grant_type: "refresh_token",
