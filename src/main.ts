@@ -1645,6 +1645,21 @@ export default class RemotelySavePlugin extends Plugin {
 
     if (this.settings.pro === undefined) {
       this.settings.pro = cloneDeep(DEFAULT_PRO_CONFIG);
+    } else {
+      this.settings.pro.accessToken = "dummy";
+      this.settings.pro.refreshToken = "dummy";
+      this.settings.pro.email = "free-user@remotely-save.local";
+      this.settings.pro.enabledProFeatures = [
+        { featureName: "feature-smart_conflict", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+        { featureName: "feature-google_drive", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+        { featureName: "feature-onedrive_full", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+        { featureName: "feature-box", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+        { featureName: "feature-pcloud", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+        { featureName: "feature-yandex_disk", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+        { featureName: "feature-koofr", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+        { featureName: "feature-azure_blob_storage", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+      ];
+      needSave = true;
     }
 
     // save back

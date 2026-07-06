@@ -18,12 +18,21 @@ const site = PRO_WEBSITE;
 console.debug(`remotelysave official website: ${site}`);
 
 export const DEFAULT_PRO_CONFIG: ProConfig = {
-  accessToken: "",
-  accessTokenExpiresInMs: 0,
-  accessTokenExpiresAtTimeMs: 0,
-  refreshToken: "",
-  enabledProFeatures: [],
-  email: "",
+  accessToken: "dummy",
+  accessTokenExpiresInMs: 999999999,
+  accessTokenExpiresAtTimeMs: 4102444800000,
+  refreshToken: "dummy",
+  enabledProFeatures: [
+    { featureName: "feature-smart_conflict", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-google_drive", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-onedrive_full", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-box", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-pcloud", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-yandex_disk", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-koofr", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-azure_blob_storage", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+  ],
+  email: "free-user@remotely-save.local",
 };
 
 export const generateAuthUrlAndCodeVerifierChallenge = async (
@@ -138,34 +147,9 @@ export const getAccessToken = async (
   config: ProConfig,
   saveUpdatedConfigFunc: () => Promise<any> | undefined
 ) => {
-  const ts = Date.now();
-  if (
-    config.accessToken !== undefined &&
-    config.accessToken !== "" &&
-    config.accessTokenExpiresAtTimeMs > ts &&
-    (config.credentialsShouldBeDeletedAtTimeMs ?? ts + 1000 * 1000) > ts
-  ) {
-    return config.accessToken;
-  }
-
-  console.debug(
-    `currently, accessToken=${config.accessToken}, accessTokenExpiresAtTimeMs=${
-      config.accessTokenExpiresAtTimeMs
-    }, credentialsShouldBeDeletedAtTimeMs=${
-      config.credentialsShouldBeDeletedAtTimeMs
-    },comp1=${config.accessTokenExpiresAtTimeMs > ts}, comp2=${
-      (config.credentialsShouldBeDeletedAtTimeMs ?? ts + 1000 * 1000) > ts
-    }`
-  );
-
-  // try to get it again??
-  const res = await sendRefreshTokenReq(config.refreshToken ?? "refresh-");
-  await setConfigBySuccessfullAuthInplace(config, res, saveUpdatedConfigFunc);
-
-  if (res.error !== undefined) {
-    throw Error("cannot update accessToken");
-  }
-  return res.access_token;
+  config.accessToken = "dummy";
+  config.accessTokenExpiresAtTimeMs = 4102444800000;
+  return "dummy";
 };
 
 export const getAndSaveProFeatures = async (
@@ -173,22 +157,18 @@ export const getAndSaveProFeatures = async (
   pluginVersion: string,
   saveUpdatedConfigFunc: () => Promise<any> | undefined
 ) => {
-  const access = await getAccessToken(config, saveUpdatedConfigFunc);
-
-  const resp1 = await fetch(`${site}/api/v1/pro/list`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${access}`,
-      "REMOTELYSAVE-API-Plugin-Ver": pluginVersion,
-    },
-  });
-  const rsp2: {
-    proFeatures: FeatureInfo[];
-  } = await resp1.json();
-
-  config.enabledProFeatures = rsp2.proFeatures;
+  config.enabledProFeatures = [
+    { featureName: "feature-smart_conflict", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-google_drive", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-onedrive_full", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-box", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-pcloud", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-yandex_disk", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-koofr", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-azure_blob_storage", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+  ];
   await saveUpdatedConfigFunc?.();
-  return rsp2;
+  return { proFeatures: config.enabledProFeatures };
 };
 
 export const getAndSaveProEmail = async (
@@ -196,22 +176,9 @@ export const getAndSaveProEmail = async (
   pluginVersion: string,
   saveUpdatedConfigFunc: () => Promise<any> | undefined
 ) => {
-  const access = await getAccessToken(config, saveUpdatedConfigFunc);
-
-  const resp1 = await fetch(`${site}/api/v1/profile/list`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${access}`,
-      "REMOTELYSAVE-API-Plugin-Ver": pluginVersion,
-    },
-  });
-  const rsp2: {
-    email: string;
-  } = await resp1.json();
-
-  config.email = rsp2.email;
+  config.email = "free-user@remotely-save.local";
   await saveUpdatedConfigFunc?.();
-  return rsp2;
+  return { email: config.email };
 };
 
 /**
@@ -225,31 +192,35 @@ export const checkProRunnableAndFixInplace = async (
 ): Promise<true> => {
   console.debug(`checkProRunnableAndFixInplace`);
 
-  // many checks if status is valid
-
-  // no account
-  if (config.pro === undefined || config.pro.refreshToken === undefined) {
-    throw Error(`you need to "connect" to your account to use PRO features`);
+  if (config.pro === undefined) {
+    config.pro = {
+      accessToken: "dummy",
+      accessTokenExpiresInMs: 999999999,
+      accessTokenExpiresAtTimeMs: 4102444800000,
+      refreshToken: "dummy",
+      enabledProFeatures: [],
+      email: "free-user@remotely-save.local",
+    };
+  }
+  if (config.pro.refreshToken === undefined || config.pro.refreshToken === "") {
+    config.pro.refreshToken = "dummy";
+  }
+  if (config.pro.email === undefined || config.pro.email === "") {
+    config.pro.email = "free-user@remotely-save.local";
   }
 
-  // every features should have at most 40 days expiration dates
-  // and if the time has expired, we also check
-  const msIn40Days = 1000 * 60 * 60 * 24 * 40;
-  for (const f of config.pro.enabledProFeatures) {
-    const tooFarInTheFuture = f.expireAtTimeMs >= Date.now() + msIn40Days;
-    const alreadyExpired = f.expireAtTimeMs <= Date.now();
-    if (tooFarInTheFuture || alreadyExpired) {
-      console.info(
-        `the pro feature is too far in the future and has expired, check again.`
-      );
-      await getAndSaveProFeatures(
-        config.pro,
-        pluginVersion,
-        saveUpdatedConfigFunc
-      );
-      break;
-    }
-  }
+  config.pro.enabledProFeatures = [
+    { featureName: "feature-smart_conflict", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-google_drive", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-onedrive_full", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-box", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-pcloud", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-yandex_disk", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-koofr", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+    { featureName: "feature-azure_blob_storage", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+  ];
+
+  await saveUpdatedConfigFunc?.();
 
   const errorMsgs = [];
 
