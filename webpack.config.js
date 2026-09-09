@@ -3,6 +3,23 @@ const path = require("path");
 const webpack = require("webpack");
 const TerserPlugin = require("terser-webpack-plugin");
 
+// stamped into the bundle so a running plugin can say exactly which build it is
+const BUILD_MARK = (() => {
+  const version = require("./package.json").version;
+  let commit = "nogit";
+  try {
+    commit = require("child_process")
+      .execSync("git rev-parse --short HEAD", {
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+      .toString()
+      .trim();
+  } catch (e) {
+    // building outside a git checkout is fine, just less precise
+  }
+  return `${version}+${commit}`;
+})();
+
 const DEFAULT_DROPBOX_APP_KEY = process.env.DROPBOX_APP_KEY || "";
 const DEFAULT_ONEDRIVE_CLIENT_ID = process.env.ONEDRIVE_CLIENT_ID || "";
 const DEFAULT_ONEDRIVE_AUTHORITY = process.env.ONEDRIVE_AUTHORITY || "";
@@ -31,6 +48,7 @@ module.exports = {
   },
   plugins: [
     new webpack.DefinePlugin({
+      "global.BUILD_MARK": `"${BUILD_MARK}"`,
       "global.DEFAULT_DROPBOX_APP_KEY": `"${DEFAULT_DROPBOX_APP_KEY}"`,
       "global.DEFAULT_ONEDRIVE_CLIENT_ID": `"${DEFAULT_ONEDRIVE_CLIENT_ID}"`,
       "global.DEFAULT_ONEDRIVE_AUTHORITY": `"${DEFAULT_ONEDRIVE_AUTHORITY}"`,

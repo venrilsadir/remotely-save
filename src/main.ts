@@ -68,6 +68,7 @@ import type {
   SyncTriggerSourceType,
 } from "./baseTypes";
 import {
+  BUILD_MARK,
   COMMAND_CALLBACK,
   COMMAND_CALLBACK_DROPBOX,
   COMMAND_CALLBACK_ONEDRIVE,
@@ -529,7 +530,7 @@ export default class RemotelySavePlugin extends Plugin {
   async onload() {
     console.info(`loading plugin ${this.manifest.id}`);
     console.info(
-      `remotely-save platform: isMobileApp=${Platform.isMobileApp} isIosApp=${Platform.isIosApp} isAndroidApp=${Platform.isAndroidApp} isDesktopApp=${Platform.isDesktopApp} tunnelViaRequestUrl=${needsObsidianFetch()}`
+      `remotely-save build=${BUILD_MARK} manifest=${this.manifest.version} platform: isMobileApp=${Platform.isMobileApp} isIosApp=${Platform.isIosApp} isAndroidApp=${Platform.isAndroidApp} isDesktopApp=${Platform.isDesktopApp} tunnelViaRequestUrl=${needsObsidianFetch()}`
     );
 
     const { iconSvgSyncWait, iconSvgSyncRunning, iconSvgLogs } = getIconSvg();

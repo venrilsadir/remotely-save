@@ -19,7 +19,18 @@ declare global {
   var DEFAULT_DROPBOX_APP_KEY: string;
   var DEFAULT_ONEDRIVE_CLIENT_ID: string;
   var DEFAULT_ONEDRIVE_AUTHORITY: string;
+  var BUILD_MARK: string;
 }
+
+/**
+ * version + commit of the bundle itself, stamped in by webpack.
+ *
+ * manifest.json is not a reliable answer to "which build is running": people
+ * copy main.js onto a device on its own, so the manifest can say one thing
+ * while the code says another. This is read out of the bundle, so it cannot
+ * disagree with the code around it.
+ */
+export const BUILD_MARK = global.BUILD_MARK;
 
 export const DROPBOX_APP_KEY = global.DEFAULT_DROPBOX_APP_KEY;
 export const ONEDRIVE_CLIENT_ID = global.DEFAULT_ONEDRIVE_CLIENT_ID;

@@ -55,7 +55,13 @@
 
 ---
 
-## 2-1. iOS / iPadOS 전용 문제 해결 (`Load failed`)
+## 2-1. iOS / iPadOS 네트워크 경로 정리 (`Load failed`의 원인은 아니었음)
+
+> [!WARNING]
+> 이 장의 분석은 **`Load failed` 증상의 원인이 아니었습니다.** 실제 원인은 [2-2장](#2-2-진짜-원인이었던-것-pro-계정-검증-load-failed의-실체)을 보십시오.
+> 다만 여기서 정리한 내용(iOS의 cross-origin `fetch` 제약, `requestUrl` 경유)은 그 자체로 유효한 문제이고,
+> Dropbox OAuth·토큰 갱신과 OneDrive 업로드 경로에 실제로 남아 있던 위험이라 수정은 그대로 두었습니다.
+
 
 ### 1) 증상
 PC(데스크톱)와 Android에서는 정상 동작하지만, iPad/iPhone의 옵시디언에서는 플러그인 로드까지는 되어도
@@ -111,6 +117,84 @@ PC(데스크톱)와 Android에서는 정상 동작하지만, iPad/iPhone의 옵�
 > 테스트 전체가 `MODULE_NOT_FOUND`로 깨집니다. Webdis에도 적용하려면 테스트를 먼저 분리해야 합니다.
 > 마찬가지로 `pro/src/` 아래의 서비스들(Google Drive, Box, pCloud, Yandex, Koofr)에도 동일한 네이티브 `fetch` 패턴이
 > 남아 있으므로, 해당 서비스를 iOS에서 쓰려면 같은 방식의 치환이 추가로 필요합니다.
+
+---
+
+## 2-2. 진짜 원인이었던 것: PRO 계정 검증 (`Load failed`의 실체)
+
+> [!IMPORTANT]
+> 2-1장의 iOS/CORS 분석은 **이 증상의 원인이 아니었습니다.** 아래가 실제 원인입니다.
+
+### 1) 아이패드 콘솔 로그가 말해준 것
+
+모바일에서는 [Logstravaganza](https://obsidian.md/plugins?search=Logstravaganza) 플러그인으로 콘솔 로그를 노트로 뽑을 수 있습니다
+(플러그인 설정의 "View Console Log" 항목이 안내하는 방법입니다). 실제로 뽑아 보니:
+
+```
+["starting sync."]
+["checkProRunnableAndFixInplace"]
+["the pro feature is too far in the future and has expired, check again."]
+["start auto getting refreshed Remotely Save access token."]
+error [{}]
+["ending sync."]
+```
+
+Dropbox 호출은 시작조차 하지 않았습니다. **PRO 라이선스 검증**에서 죽고 있었습니다.
+
+### 2) 메커니즘
+
+- PRO 우회를 위해 만료일을 2100년(`4102444800000`)으로 박아 두었는데,
+  upstream 코드에는 만료일이 **"현재 + 40일" 이내여야 유효**하다는 검사가 있습니다.
+- 2100년은 이 검사에서 *"미래로 너무 멀다 = 무효"* 로 판정되어,
+  이미 죽은 검증 서버(`https://remotely-save.github.io/api/v1/oauth2/token`)로 토큰 갱신을 시도합니다.
+- 이 요청이 실패하면서 동기화 전체가 중단됩니다.
+  데스크톱에서는 405/404 같은 HTTP 오류로, iOS(WKWebView)에서는 CORS 거부에 의한 `TypeError: Load failed`로 나타납니다.
+  **같은 원인이 플랫폼마다 다른 얼굴로 보였을 뿐입니다.**
+
+이 문제는 커밋 `0aee0e3`에서 이미 해결되었습니다. 증상이 재현된 기기는 **그 커밋 이전 빌드를 돌리고 있었습니다.**
+
+### 3) 즉시 회피 방법
+
+플러그인 설정에서 **Remotely Save 계정(PRO)을 삭제**하면 검증 경로 자체를 타지 않아 바로 정상 동작합니다.
+Dropbox/S3/WebDAV 등 무료 서비스만 쓴다면 PRO 계정은 필요 없습니다.
+
+### 4) 여기서 얻은 교훈
+
+> [!CAUTION]
+> **`Load failed`라는 문구만 보고 CORS로 단정하지 마십시오.**
+> 이 문구는 WebKit이 실패한 요청에 붙이는 일반적인 메시지일 뿐, *어떤* 요청이 왜 실패했는지는 말해주지 않습니다.
+> `src/main.ts`의 `errNotifyFunc`가 `error.message`를 Notice에 그대로 출력하기 때문에
+> 사용자에게는 두 단어만 보이고, 그 두 단어로는 원인을 좁힐 수 없습니다.
+>
+> **추측하지 말고 Logstravaganza로 콘솔 로그부터 확보하십시오.**
+
+> [!CAUTION]
+> **어떤 빌드가 돌고 있는지부터 확인하십시오.**
+> `main.js`만 따로 복사하는 방식이라 `manifest.json`의 버전과 실제 코드가 얼마든지 어긋날 수 있습니다.
+> 이 함정 때문에 실제로 한 차례 잘못된 방향으로 수정이 진행되었습니다.
+>
+> 그래서 webpack이 `package.json`의 버전과 git 커밋 해시를 번들에 직접 박아 넣고(`global.BUILD_MARK`),
+> 플러그인 로드 시 아래 한 줄을 남기도록 했습니다.
+>
+> ```
+> remotely-save build=0.5.28+f1a16a1 manifest=0.5.28 platform: isMobileApp=... tunnelViaRequestUrl=...
+> ```
+>
+> `build=` 값은 번들에서 읽으므로 코드와 절대 어긋나지 않습니다. 이 줄이 안 보이면 옛 빌드가 돌고 있는 것입니다.
+
+### 5) 모바일에 확실하게 설치하기 (BRAT 권장)
+
+`main.js`를 직접 복사하는 방식은 경로를 틀리거나 앱이 재시작되지 않아 조용히 실패하기 쉽습니다.
+모바일에서는 **BRAT**(Obsidian 커뮤니티 플러그인) 사용을 권장합니다.
+
+1. 커뮤니티 플러그인에서 `BRAT` 설치·활성화
+2. `Add beta plugin` → `venrilsadir/remotely-save` 입력
+3. 이후 `Check for updates`로 갱신
+
+> [!NOTE]
+> BRAT은 저장소 **루트의 `manifest.json`** 버전을 보고 해당 태그의 릴리스를 받아갑니다.
+> 따라서 태그를 올릴 때 루트 `manifest.json`, `manifest-beta.json`, `package.json`, `versions.json`의
+> 버전도 함께 커밋해 두어야 합니다. (릴리스 워크플로는 CI 작업 공간에서만 덮어쓰므로 저장소에는 반영되지 않습니다.)
 
 ---
 
