@@ -252,7 +252,32 @@ git push origin 0.5.26
 빌드 실패 등으로 다시 돌려야 한다면 태그를 새로 만들 필요 없이
 `Actions` → `Release A New Version` → `Run workflow`에서 태그명을 입력해 다시 실행할 수 있습니다.
 
-### 4) 태그 삭제 (잘못 올렸을 때)
+### 4) 로컬은 되는데 CI 빌드만 깨질 때
+
+`package-lock.json`이 `.gitignore`에 들어 있어 **저장소에 락파일이 없습니다.**
+따라서 CI의 `npm install`은 매번 `^` 범위 안에서 최신 버전을 새로 해석하고, 로컬 `node_modules`와 다른 트리가 만들어집니다.
+
+실제로 겪은 사례:
+
+- `webpack.config.js`가 `require("terser-webpack-plugin")`을 하는데 이 패키지가 `package.json`에 **선언되어 있지 않았습니다.**
+- 로컬에서는 예전 설치(webpack 5.107)의 전이 의존성으로 남아 있어 빌드가 성공했지만,
+  CI가 새로 설치한 webpack 5.110은 더 이상 이 패키지를 끌고 오지 않아 `Cannot find module 'terser-webpack-plugin'`으로 실패했습니다.
+- `terser-webpack-plugin`을 `devDependencies`에 명시해 해결했습니다.
+
+같은 증상이 재발하면 **깨끗한 클론으로 CI 조건을 재현**하는 것이 가장 빠릅니다.
+
+```bash
+git clone --branch <태그> . /tmp/ci-repro
+cd /tmp/ci-repro && npm install && npm run build
+```
+
+작업 디렉토리에는 `.env`와 오래된 `node_modules`가 있어 CI와 조건이 다르므로, 반드시 별도 클론에서 확인하십시오.
+
+> [!TIP]
+> 근본적으로는 `package-lock.json`을 `.gitignore`에서 빼고 커밋한 뒤 CI에서 `npm ci`를 쓰는 것이
+> 빌드 재현성을 보장하는 방법입니다. 다만 upstream이 의도적으로 락파일을 제외해 둔 상태라 현재는 그대로 두었습니다.
+
+### 5) 태그 삭제 (잘못 올렸을 때)
 
 ```bash
 git push origin --delete 0.5.26   # 원격 태그 삭제
