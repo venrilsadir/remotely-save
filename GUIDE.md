@@ -146,11 +146,88 @@ npm run test
 PowerShell 터미널을 열고 프로젝트 루트 디렉토리에서 아래 명령어를 순서대로 실행합니다.
 
 ```powershell
+$dst = "E:\personal\obsidian\Vault\.obsidian\plugins\remotely-save"
+
 # 1. manifest.json 복사
-cp .\manifest.json E:\personal\obsidian\Vault\.obsidian\plugins\remotely-save\
+Copy-Item .\manifest.json $dst -Force
 
 # 2. 빌드된 main.js 복사
-cp .\main.js E:\personal\obsidian\Vault\.obsidian\plugins\remotely-save\
+Copy-Item .\main.js $dst -Force
+
+# 3. styles.css 복사
+Copy-Item .\styles.css $dst -Force
 ```
 
+> [!CAUTION]
+> 플러그인 폴더의 `data.json`은 **사용자의 실제 설정과 클라우드 토큰**이 들어 있는 파일입니다. 절대 덮어쓰지 마십시오.
+> 복사 대상은 `main.js`, `manifest.json`, `styles.css` 세 개뿐입니다.
+
+> [!NOTE]
+> 과거 webpack이 번들을 분할하던 시절의 잔재로 플러그인 폴더에 `274.main.js` 같은 청크 파일이 남아 있을 수 있습니다.
+> 현재는 `LimitChunkCountPlugin(maxChunks: 1)`으로 `main.js` 하나만 생성되므로, 남아 있는 청크 파일은 로드되지 않는 사용하지 않는 파일입니다. 지워도 무방합니다.
+
 복사를 완료한 후, Obsidian 설정의 **커뮤니티 플러그인(Community Plugins)** 메뉴로 이동하여 `Remotely Save` 플러그인을 **비활성화 후 다시 활성화(Reload)** 하거나 Obsidian 앱을 재시작하면 변경 사항이 완벽히 적용됩니다.
+
+---
+
+## 5. GitHub 자동 빌드 및 릴리스
+
+태그를 푸시하면 GitHub Actions가 빌드·테스트·릴리스까지 자동으로 수행합니다.
+워크플로 정의는 [.github/workflows/release.yml](file:///d:/workspace/40_private_project/obsidian_plugins/remotely-save/.github/workflows/release.yml)에 있습니다.
+
+### 1) 최초 1회 준비 (GitHub 웹에서 직접 수행)
+
+포크한 저장소는 **워크플로 실행 권한과 시크릿을 상속받지 않으므로** 아래 두 가지를 먼저 설정해야 합니다.
+
+1. **Actions 활성화**
+   저장소의 `Actions` 탭 → *"I understand my workflows, go ahead and enable them"* 버튼 클릭.
+   (포크 저장소는 기본적으로 워크플로 실행이 꺼져 있습니다.)
+
+2. **리포지토리 시크릿 등록**
+   `Settings` → `Secrets and variables` → `Actions` → `New repository secret`.
+   로컬 `.env`에 있는 값을 그대로 넣으면 됩니다. **`DROPBOX_APP_KEY`는 필수**이며, 없으면 워크플로가 의도적으로 실패합니다.
+
+   | 시크릿 이름 | 필요성 |
+   | --- | --- |
+   | `DROPBOX_APP_KEY` | **필수** (없으면 빌드 중단) |
+   | `ONEDRIVE_CLIENT_ID`, `ONEDRIVE_AUTHORITY` | OneDrive를 쓸 경우 |
+   | `GOOGLEDRIVE_CLIENT_ID`, `GOOGLEDRIVE_CLIENT_SECRET` | Google Drive를 쓸 경우 |
+   | `REMOTELYSAVE_WEBSITE`, `REMOTELYSAVE_CLIENT_ID` | PRO 인증 관련(현재는 오프라인 우회) |
+   | `BOX_*`, `PCLOUD_*`, `YANDEXDISK_*`, `KOOFR_*` | 해당 서비스를 쓸 경우 |
+
+> [!IMPORTANT]
+> 이 키들은 `webpack.DefinePlugin`을 통해 **빌드 시점에 `main.js` 안으로 인라인**됩니다.
+> 즉 시크릿 없이 빌드하면 문법적으로는 성공하지만 인증이 불가능한 껍데기 `main.js`가 릴리스됩니다.
+> 그래서 워크플로에 `DROPBOX_APP_KEY` 존재 여부를 검사하는 단계를 명시적으로 넣어 두었습니다.
+
+### 2) 릴리스 방법
+
+```bash
+git tag 0.5.26            # v0.5.26 처럼 앞에 v를 붙여도 됩니다 (자동으로 제거)
+git push origin 0.5.26
+```
+
+태그가 푸시되면 워크플로가 순서대로 다음을 수행합니다.
+
+1. 태그명에서 버전을 추출합니다 (`v` 접두사는 제거).
+2. `manifest.json`, `manifest-beta.json`, `package.json`의 `version`을 **태그와 일치하도록 덮어씁니다.**
+   (옵시디언과 BRAT은 `manifest.version`과 릴리스 태그가 정확히 같아야 인식합니다. CI 작업 공간에서만 수정하며 저장소에는 커밋하지 않습니다.)
+3. LFS 파일을 포함해 체크아웃합니다. `*.svg`가 LFS로 관리되는데 webpack이 이를 `asset/source`로 인라인하므로,
+   포인터가 해석되지 않으면 아이콘 자리에 포인터 텍스트가 박힌 `main.js`가 만들어집니다.
+4. `npm install` → `npm test` → `npm run build`
+5. **빌드 산출물을 검증합니다.** `main.js` 존재 여부와 크기, 그리고 `274.main.js` 같은 **추가 청크가 생기지 않았는지**를 확인합니다.
+   청크가 분할되면 모바일에서 플러그인이 로드되지 않기 때문입니다 (커밋 `f9cf829` 참고).
+6. `main.js` / `manifest.json` / `styles.css` 와, 수동 설치용 `remotely-save-<버전>.zip`을 릴리스에 첨부합니다.
+
+### 3) 재실행
+
+시크릿 누락 등으로 실패했다면 태그를 다시 만들 필요 없이
+`Actions` → `Release A New Version` → `Run workflow`에서 태그명을 입력해 다시 실행할 수 있습니다.
+
+### 4) 태그 삭제 (잘못 올렸을 때)
+
+```bash
+git push origin --delete 0.5.26   # 원격 태그 삭제
+git tag -d 0.5.26                 # 로컬 태그 삭제
+```
+릴리스는 GitHub 웹의 `Releases` 화면에서 따로 삭제해야 합니다.

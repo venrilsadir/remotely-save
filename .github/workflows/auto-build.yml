@@ -13,8 +13,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    environment: env-for-buildci
-
+    # no "environment:" here on purpose: a fork does not inherit the upstream
+    # environments or their secrets, so the keys below are read from the plain
+    # repository secrets (Settings > Secrets and variables > Actions).
     env:
       DROPBOX_APP_KEY: ${{secrets.DROPBOX_APP_KEY}}
       ONEDRIVE_CLIENT_ID: ${{secrets.ONEDRIVE_CLIENT_ID}}
