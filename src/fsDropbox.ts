@@ -18,78 +18,14 @@ import {
   headersToRecord,
 } from "./misc";
 
-import { requestUrl } from "obsidian";
+import {
+  isNetworkLoadError,
+  obsidianFetch,
+  platformSafeFetch,
+} from "./obsFetch";
 
-export const obsidianFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const url = typeof input === "string" ? input : (input as any).url || input.toString();
-  const method = init?.method || "GET";
-  
-  const headers: Record<string, string> = {};
-  if (init?.headers) {
-    if (init.headers instanceof Headers) {
-      init.headers.forEach((value, key) => {
-        headers[key] = value;
-      });
-    } else if (Array.isArray(init.headers)) {
-      for (const [key, value] of init.headers) {
-        headers[key] = value;
-      }
-    } else {
-      for (const key of Object.keys(init.headers)) {
-        headers[key] = (init.headers as any)[key];
-      }
-    }
-  }
-
-  let body = init?.body;
-  let contentType: string | undefined = undefined;
-
-  if (
-    body instanceof URLSearchParams ||
-    (body && typeof body === "object" && ((body as any).constructor?.name === "URLSearchParams" || Object.prototype.toString.call(body) === "[object URLSearchParams]"))
-  ) {
-    body = (body as any).toString();
-    headers["content-type"] = "application/x-www-form-urlencoded;charset=UTF-8";
-    headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
-  }
-
-  if (headers["content-type"] || headers["Content-Type"]) {
-    contentType = headers["content-type"] || headers["Content-Type"];
-  }
-
-  if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
-    if (ArrayBuffer.isView(body)) {
-      body = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
-    }
-  } else if (body instanceof Blob) {
-    body = await body.arrayBuffer();
-  }
-
-  const res = await requestUrl({
-    url: url,
-    method: method,
-    headers: headers,
-    body: body as any,
-    contentType: contentType,
-    throw: false,
-  });
-
-  const resHeaders = new Headers();
-  for (const key of Object.keys(res.headers)) {
-    resHeaders.set(key, res.headers[key]);
-  }
-
-  return {
-    status: res.status,
-    statusText: "",
-    ok: res.status >= 200 && res.status < 300,
-    headers: resHeaders,
-    json: async () => res.json,
-    text: async () => res.text,
-    arrayBuffer: async () => res.arrayBuffer,
-    blob: async () => new Blob([res.arrayBuffer]),
-  } as Response;
-};
+// re-exported for backward compatibility of existing imports
+export { obsidianFetch } from "./obsFetch";
 
 export { Dropbox } from "dropbox";
 
@@ -257,11 +193,14 @@ async function retryReq<T>(
     } catch (e: unknown) {
       const err = e as DropboxResponseError<any>;
       let shouldRetry = false;
-      const errStr = JSON.stringify(e || {}).toLowerCase();
-      const isFailedToFetch = errStr.includes("failed to fetch") || errStr.includes("networkerror") || errStr.includes("typeerror");
+      const errStr = JSON.stringify(err.error || {}).toLowerCase();
 
       if (err.status === undefined) {
-        if (isFailedToFetch) {
+        // not a DropboxResponseError.
+        // a CORS rejection or a dropped connection surfaces here as a bare
+        // TypeError ("Load failed" on iOS, "Failed to fetch" on Chromium),
+        // which is worth retrying; anything else is a real bug, so rethrow.
+        if (isNetworkLoadError(e)) {
           shouldRetry = true;
         } else {
           throw err;
@@ -369,18 +308,23 @@ export const sendAuthReq = async (
   errorCallBack: any
 ) => {
   try {
-    const resp1 = await fetch("https://api.dropboxapi.com/oauth2/token", {
-      method: "POST",
-      body: new URLSearchParams({
-        code: authCode,
-        grant_type: "authorization_code",
-        code_verifier: verifier,
-        client_id: appKey,
-        redirect_uri: `obsidian://${COMMAND_CALLBACK_DROPBOX}`,
-      }),
-    });
+    const resp1 = await platformSafeFetch(
+      "https://api.dropboxapi.com/oauth2/token",
+      {
+        method: "POST",
+        body: new URLSearchParams({
+          code: authCode,
+          grant_type: "authorization_code",
+          code_verifier: verifier,
+          client_id: appKey,
+          redirect_uri: `obsidian://${COMMAND_CALLBACK_DROPBOX}`,
+        }),
+      }
+    );
     if (!resp1.ok) {
-      throw new Error(`Auth failed with status ${resp1.status}: ${await resp1.text()}`);
+      throw new Error(
+        `Auth failed with status ${resp1.status}: ${await resp1.text()}`
+      );
     }
     const resp2 = (await resp1.json()) as DropboxSuccessAuthRes;
     return resp2;
@@ -398,16 +342,21 @@ export const sendRefreshTokenReq = async (
 ) => {
   try {
     console.info("start auto getting refreshed Dropbox access token.");
-    const resp1 = await fetch("https://api.dropboxapi.com/oauth2/token", {
-      method: "POST",
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: appKey,
-      }),
-    });
+    const resp1 = await platformSafeFetch(
+      "https://api.dropboxapi.com/oauth2/token",
+      {
+        method: "POST",
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: appKey,
+        }),
+      }
+    );
     if (!resp1.ok) {
-      throw new Error(`Token refresh failed with status ${resp1.status}: ${await resp1.text()}`);
+      throw new Error(
+        `Token refresh failed with status ${resp1.status}: ${await resp1.text()}`
+      );
     }
     const resp2 = (await resp1.json()) as DropboxSuccessAuthRes;
     console.info("finish auto getting refreshed Dropbox access token.");
@@ -837,9 +786,15 @@ export class FakeFsDropbox extends FakeFs {
       );
     } catch (err: any) {
       const errStr = JSON.stringify(err || {}).toLowerCase();
-      if (err?.status === 409 && (errStr.includes("path_lookup/not_found") || errStr.includes("not_found"))) {
+      if (
+        err?.status === 409 &&
+        (errStr.includes("path_lookup/not_found") ||
+          errStr.includes("not_found"))
+      ) {
         // if file does not exist on remote, we consider deletion successful
-        console.warn(`file/folder ${key} not found on remote, skipping deletion error`);
+        console.warn(
+          `file/folder ${key} not found on remote, skipping deletion error`
+        );
         return;
       }
       console.error("some error while deleting");

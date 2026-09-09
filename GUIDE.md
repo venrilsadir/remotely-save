@@ -55,6 +55,65 @@
 
 ---
 
+## 2-1. iOS / iPadOS 전용 문제 해결 (`Load failed`)
+
+### 1) 증상
+PC(데스크톱)와 Android에서는 정상 동작하지만, iPad/iPhone의 옵시디언에서는 플러그인 로드까지는 되어도
+동기화를 시작하는 즉시 중단되며 **`Load failed`** 라는 알림(Notice)만 뜹니다.
+
+### 2) 원인
+- 옵시디언 iOS 앱은 **WKWebView** 위에서 동작하며, 페이지의 origin이 `capacitor://` / `app://obsidian.md` 같은
+  **커스텀 스킴**입니다. WebKit은 커스텀 스킴 origin에서 나가는 cross-origin `fetch()` 요청을 CORS 규칙에 따라 거부합니다.
+- 이때 WebKit이 던지는 예외는 상태 코드가 없는 순수 `TypeError`이고, 그 `message`가 문자 그대로 **`Load failed`** 입니다.
+  (Chromium 계열은 `Failed to fetch`, Firefox는 `NetworkError`)
+- 데스크톱(Electron)과 Android(Chromium WebView)에는 이 제약이 없기 때문에 두 환경에서는 문제가 드러나지 않습니다.
+- `src/main.ts`의 `errNotifyFunc`가 `error.message`를 그대로 Notice에 출력하므로, 사용자에게는 `Load failed`만 보이게 됩니다.
+- 특히 Dropbox의 경우, 동기화 시작 시점의 `FakeFsDropbox._init()`에서 액세스 토큰이 만료되었으면
+  `sendRefreshTokenReq()`가 **가장 먼저** 네이티브 `fetch`로 토큰 갱신을 시도합니다.
+  (Dropbox 액세스 토큰 수명은 약 4시간이므로 사실상 매 동기화마다 호출됩니다.)
+  이 호출이 iOS에서 즉시 실패하면서 "동기화 시작하자마자 멈춤" 증상이 나타납니다.
+
+### 3) 수정 내용
+
+#### ④ [src/obsFetch.ts](file:///d:/workspace/40_private_project/obsidian_plugins/remotely-save/src/obsFetch.ts) (신규)
+기존에 `src/fsDropbox.ts` 안에 있던 `obsidianFetch`를 공용 모듈로 분리하고 다음 세 가지를 제공합니다.
+- `obsidianFetch`: 옵시디언의 네이티브 `requestUrl` API를 `fetch` 인터페이스로 감싼 래퍼. CORS 제약을 받지 않습니다.
+- `platformSafeFetch`: **iOS/iPadOS(`Platform.isIosApp`)에서만** `obsidianFetch`를 사용하고,
+  그 외 환경에서는 기존과 동일하게 네이티브 `fetch`를 사용합니다.
+  (이미 정상 동작 중인 데스크톱/Android 경로를 건드리지 않기 위한 조건부 분기입니다.
+  커밋 `74691aa`에서 Android 호환성 때문에 네이티브 `fetch`로 되돌렸던 결정을 그대로 존중합니다.)
+- `isNetworkLoadError`: `Load failed` / `Failed to fetch` / `NetworkError` 등 **HTTP 상태 코드가 없는 저수준 네트워크 실패**를
+  엔진에 상관없이 판별합니다.
+
+#### ⑤ [src/fsDropbox.ts](file:///d:/workspace/40_private_project/obsidian_plugins/remotely-save/src/fsDropbox.ts)
+- `sendAuthReq`(최초 OAuth 로그인)와 `sendRefreshTokenReq`(토큰 자동 갱신)의 `fetch`를 `platformSafeFetch`로 교체했습니다.
+  → iOS에서 동기화 시작 직후 발생하던 `Load failed`의 직접적인 원인이 제거됩니다.
+- `retryReq`의 네트워크 실패 판별 로직을 `isNetworkLoadError`로 교체했습니다.
+- `obsidianFetch` 구현체는 `src/obsFetch.ts`로 이동했고, 기존 import 호환을 위해 재export만 남겨두었습니다.
+
+#### ⑥ [src/fsOnedrive.ts](file:///d:/workspace/40_private_project/obsidian_plugins/remotely-save/src/fsOnedrive.ts)
+- 업로드 경로(`_putArrayBuffer`, `_putUint8ArrayByRange`)와 `_deleteJson`의 네이티브 `fetch`를 `platformSafeFetch`로 교체했습니다.
+  이 지점들은 주석대로 "Android의 base64 이슈" 때문에 `if (false /*VALID_REQURL*/)`로 `requestUrl`이 꺼져 있어
+  iOS에서도 동일하게 CORS 벽에 부딪히던 곳입니다.
+- 다운로드 경로는 이미 `catch`에서 `requestUrl`로 재시도하는 폴백이 있어 그대로 두었습니다.
+
+> [!NOTE]
+> **`JSON.stringify(error)`로는 네트워크 에러를 잡을 수 없습니다.**
+> `Error` 객체의 `name`/`message`는 열거 가능(enumerable) 속성이 아니어서 `JSON.stringify(new TypeError("Load failed"))`의
+> 결과는 `"{}"` 입니다. 기존 `retryReq`의 `errStr.includes("failed to fetch")` 검사가 실제로는 한 번도 매칭되지 않았던 이유입니다.
+> 그래서 `isNetworkLoadError`는 `err.name`, `err.message`, `String(err)`를 직접 확인합니다.
+> 반대로 `DropboxResponseError`는 `status`/`headers`/`error`를 생성자에서 대입하므로 `JSON.stringify`로 직렬화됩니다.
+> (409 재시도 판별은 `JSON.stringify(err.error)` 기준으로 되돌렸습니다.)
+
+> [!WARNING]
+> **`src/fsWebdis.ts`는 의도적으로 제외했습니다.**
+> `tests/fsWebdis.test.ts`가 이 모듈을 Node에서 직접 import하는데, `obsidian` 모듈은 Node 환경에서 해석되지 않아
+> 테스트 전체가 `MODULE_NOT_FOUND`로 깨집니다. Webdis에도 적용하려면 테스트를 먼저 분리해야 합니다.
+> 마찬가지로 `pro/src/` 아래의 서비스들(Google Drive, Box, pCloud, Yandex, Koofr)에도 동일한 네이티브 `fetch` 패턴이
+> 남아 있으므로, 해당 서비스를 iOS에서 쓰려면 같은 방식의 치환이 추가로 필요합니다.
+
+---
+
 ## 3. 빌드 방법
 
 프로젝트 빌드는 Webpack을 사용하는 프로덕션 빌드 방식을 권장합니다.

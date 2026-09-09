@@ -20,6 +20,7 @@ import {
 import { VALID_REQURL } from "./baseTypesObs";
 import { FakeFs } from "./fsAll";
 import { bufferToArrayBuffer } from "./misc";
+import { platformSafeFetch } from "./obsFetch";
 
 const SCOPES = ["User.Read", "Files.ReadWrite.AppFolder", "offline_access"];
 const REDIRECT_URI = `obsidian://${COMMAND_CALLBACK_ONEDRIVE}`;
@@ -678,7 +679,7 @@ export class FakeFsOnedrive extends FakeFs {
         },
       });
     } else {
-      await fetch(theUrl, {
+      await platformSafeFetch(theUrl, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${await this.authGetter.getAccessToken()}`,
@@ -707,7 +708,7 @@ export class FakeFsOnedrive extends FakeFs {
       });
       return res.json as DriveItem | UploadSession;
     } else {
-      const res = await fetch(theUrl, {
+      const res = await platformSafeFetch(theUrl, {
         method: "PUT",
         body: payload,
         headers: {
@@ -759,7 +760,7 @@ export class FakeFsOnedrive extends FakeFs {
       });
       return res.json as DriveItem | UploadSession;
     } else {
-      const res = await fetch(theUrl, {
+      const res = await platformSafeFetch(theUrl, {
         method: "PUT",
         body: payload.subarray(rangeStart, rangeEnd),
         headers: {
