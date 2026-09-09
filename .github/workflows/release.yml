@@ -63,22 +63,34 @@ jobs:
           # so unresolved pointers would silently end up inside main.js
           lfs: true
 
-      - name: Check the OAuth keys are configured
+      - name: Report which OAuth keys are baked in
         run: |
-          # These are baked into main.js at build time by webpack.DefinePlugin.
-          # Building without them produces a plugin that cannot authenticate,
-          # so stop here instead of publishing a broken release.
-          if [ -z "$DROPBOX_APP_KEY" ]; then
-            echo "::error::Repository secret DROPBOX_APP_KEY is not set."
-            echo "Add it under Settings > Secrets and variables > Actions > New repository secret," \
-                 "then re-run this workflow."
-            exit 1
-          fi
-          for name in ONEDRIVE_CLIENT_ID ONEDRIVE_AUTHORITY GOOGLEDRIVE_CLIENT_ID; do
+          # webpack.DefinePlugin inlines these into main.js at build time; there is
+          # no settings field for them. An existing install is unaffected because
+          # the client id it authenticated with is kept in its own data.json and
+          # main.ts only refills an *empty* one from the build-time default.
+          # A missing key therefore only breaks a fresh install or a re-auth,
+          # which is a warning, not a reason to refuse to publish.
+          missing=""
+          for name in DROPBOX_APP_KEY ONEDRIVE_CLIENT_ID ONEDRIVE_AUTHORITY GOOGLEDRIVE_CLIENT_ID GOOGLEDRIVE_CLIENT_SECRET; do
             if [ -z "${!name}" ]; then
-              echo "::warning::Secret $name is not set, the matching service will not be usable."
+              missing="$missing $name"
+              echo "::warning::Secret $name is not set: a fresh install cannot authenticate that service."
             fi
           done
+          if [ -n "$missing" ]; then
+            {
+              echo "### Missing OAuth secrets"
+              echo
+              echo "Not set:$missing"
+              echo
+              echo "Already-authenticated vaults keep working, the client id lives in their own data.json."
+              echo "Fresh installs and re-auths of those services will fail."
+              echo "Add them under Settings > Secrets and variables > Actions if that matters."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "All OAuth secrets are set." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Use Node.js 20.x
         uses: actions/setup-node@v4

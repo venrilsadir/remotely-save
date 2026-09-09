@@ -183,22 +183,50 @@ Copy-Item .\styles.css $dst -Force
    저장소의 `Actions` 탭 → *"I understand my workflows, go ahead and enable them"* 버튼 클릭.
    (포크 저장소는 기본적으로 워크플로 실행이 꺼져 있습니다.)
 
-2. **리포지토리 시크릿 등록**
+2. **리포지토리 시크릿 등록 (선택 사항)**
    `Settings` → `Secrets and variables` → `Actions` → `New repository secret`.
-   로컬 `.env`에 있는 값을 그대로 넣으면 됩니다. **`DROPBOX_APP_KEY`는 필수**이며, 없으면 워크플로가 의도적으로 실패합니다.
+   로컬 `.env`에 있는 값을 그대로 넣으면 됩니다. **없어도 릴리스는 정상적으로 만들어지며**, 워크플로는 경고만 남깁니다.
 
-   | 시크릿 이름 | 필요성 |
+   | 시크릿 이름 | 없을 때의 영향 |
    | --- | --- |
-   | `DROPBOX_APP_KEY` | **필수** (없으면 빌드 중단) |
-   | `ONEDRIVE_CLIENT_ID`, `ONEDRIVE_AUTHORITY` | OneDrive를 쓸 경우 |
-   | `GOOGLEDRIVE_CLIENT_ID`, `GOOGLEDRIVE_CLIENT_SECRET` | Google Drive를 쓸 경우 |
-   | `REMOTELYSAVE_WEBSITE`, `REMOTELYSAVE_CLIENT_ID` | PRO 인증 관련(현재는 오프라인 우회) |
-   | `BOX_*`, `PCLOUD_*`, `YANDEXDISK_*`, `KOOFR_*` | 해당 서비스를 쓸 경우 |
+   | `DROPBOX_APP_KEY` | 신규 설치/재인증 시 Dropbox 인증 불가 |
+   | `ONEDRIVE_CLIENT_ID`, `ONEDRIVE_AUTHORITY` | OneDrive 신규 인증 불가 |
+   | `GOOGLEDRIVE_CLIENT_ID`, `GOOGLEDRIVE_CLIENT_SECRET` | Google Drive 신규 인증 불가 |
+   | `REMOTELYSAVE_WEBSITE`, `REMOTELYSAVE_CLIENT_ID` | 없어도 무방(PRO 검증은 오프라인 우회됨) |
+   | `BOX_*`, `PCLOUD_*`, `YANDEXDISK_*`, `KOOFR_*` | 해당 서비스 신규 인증 불가 |
 
-> [!IMPORTANT]
-> 이 키들은 `webpack.DefinePlugin`을 통해 **빌드 시점에 `main.js` 안으로 인라인**됩니다.
-> 즉 시크릿 없이 빌드하면 문법적으로는 성공하지만 인증이 불가능한 껍데기 `main.js`가 릴리스됩니다.
-> 그래서 워크플로에 `DROPBOX_APP_KEY` 존재 여부를 검사하는 단계를 명시적으로 넣어 두었습니다.
+#### OAuth 키가 실제로 흘러가는 경로
+
+```
+.env / GitHub Secret → webpack.DefinePlugin → global.DEFAULT_DROPBOX_APP_KEY
+                     → src/baseTypes.ts (DROPBOX_APP_KEY)
+                     → src/fsDropbox.ts (DEFAULT_DROPBOX_CONFIG.clientID)
+```
+
+- 플러그인 **설정 화면에는 app key 입력란이 없습니다.** 설정의 입력란(`modal_dropboxauth_maualinput`)은
+  브라우저 인증 후 받는 **인증 코드(auth code)**를 붙여넣는 자리이며, app key는 그 코드를 토큰으로 교환할 때
+  `client_id`로 함께 전송되는 값입니다. 즉 **빌드 시점에 `main.js`에 인라인**됩니다.
+- 다만 `src/main.ts`의 `loadSettings`는 저장된 값이 **비어 있을 때만** 빌드 상수로 채웁니다.
+
+  ```ts
+  if (this.settings.dropbox.clientID === "") {
+    this.settings.dropbox.clientID = DEFAULT_SETTINGS.dropbox.clientID;
+  }
+  ```
+
+  그리고 토큰 갱신도 `FakeFsDropbox._init()`에서 `sendRefreshTokenReq(this.dropboxConfig.clientID, ...)`로
+  **`data.json`에 저장된 값**을 사용합니다.
+
+> [!NOTE]
+> 결론적으로 **이미 인증을 마친 vault는 시크릿 없이 빌드한 `main.js`로도 정상 동작합니다.**
+> `data.json`에 `clientID`가 이미 들어 있기 때문입니다.
+> 시크릿이 실제로 필요한 경우는 ① 새 기기/새 vault에 처음 설치할 때, ② Revoke 후 재인증할 때 두 가지뿐입니다.
+> 그래서 워크플로는 키가 없어도 실패시키지 않고 경고와 Job Summary만 남깁니다.
+
+> [!CAUTION]
+> Dropbox app key는 PKCE 공개 클라이언트 식별자라 원래 클라이언트에 노출되는 값이지만,
+> **public 저장소의 릴리스에 넣으면 누구나 추출할 수 있고 본인 Dropbox 앱의 API 쿼터를 공유하게 됩니다.**
+> 개인용 포크라면 시크릿을 등록하지 않고, 기기마다 최초 1회만 인증된 `data.json`을 사용하는 편이 안전합니다.
 
 ### 2) 릴리스 방법
 
@@ -221,7 +249,7 @@ git push origin 0.5.26
 
 ### 3) 재실행
 
-시크릿 누락 등으로 실패했다면 태그를 다시 만들 필요 없이
+빌드 실패 등으로 다시 돌려야 한다면 태그를 새로 만들 필요 없이
 `Actions` → `Release A New Version` → `Run workflow`에서 태그명을 입력해 다시 실행할 수 있습니다.
 
 ### 4) 태그 삭제 (잘못 올렸을 때)
