@@ -489,6 +489,7 @@ export class FakeFsDropbox extends FakeFs {
       this.dropbox = new Dropbox({
         accessToken: this.dropboxConfig.accessToken,
         customHeaders: customHeaders,
+        fetch: obsidianFetch,
       });
     } else {
       if (this.dropboxConfig.refreshToken === "") {
@@ -509,6 +510,7 @@ export class FakeFsDropbox extends FakeFs {
       this.dropbox = new Dropbox({
         accessToken: this.dropboxConfig.accessToken,
         customHeaders: customHeaders,
+        fetch: obsidianFetch,
       });
     }
 

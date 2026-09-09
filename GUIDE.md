@@ -44,6 +44,9 @@
 #### ② [src/main.ts](file:///d:/workspace/40_private_project/obsidian_plugins/remotely-save/src/main.ts)
 - 플러그인이 초기화되는 `loadSettings` 시점에 기존 사용자의 `data.json` 내 `pro` 설정이 만료되었거나 비어있을 경우, 이를 2100년 만료일의 활성화 구조로 강제 덮어쓰기하여 저장하도록 보완했습니다.
 
+#### ③ [src/fsDropbox.ts](file:///d:/workspace/40_private_project/obsidian_plugins/remotely-save/src/fsDropbox.ts)
+- Dropbox SDK 호출 시 CORS 에러(특히 플러그인 삭제 시 실행되는 `delete_v2` 등)를 방지하기 위해, `Dropbox` 인스턴스 생성 시 `fetch: obsidianFetch` 옵션을 주입하였습니다. 이로 인해 모든 Dropbox 통신이 CORS 제한이 없는 Obsidian의 `requestUrl` API를 통해 이루어지게 됩니다.
+
 > [!IMPORTANT]
 > **TypeScript 형식 준수 및 JSON 직렬화 이슈 해결**
 > 소스코드 상에서 만료 시간 속성(`enableAtTimeMs`, `expireAtTimeMs`)의 타입은 `bigint`로 정의되어 있으나, Obsidian의 저장 메커니즘은 `JSON.stringify`를 사용합니다.
