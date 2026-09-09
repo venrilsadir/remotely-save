@@ -74,14 +74,19 @@ export const obsidianFetch = async (
     body = await body.arrayBuffer();
   }
 
-  const res = await requestUrl({
-    url: url,
-    method: method,
-    headers: headers,
-    body: body as any,
-    contentType: contentType,
-    throw: false,
-  });
+  let res: Awaited<ReturnType<typeof requestUrl>>;
+  try {
+    res = await requestUrl({
+      url: url,
+      method: method,
+      headers: headers,
+      body: body as any,
+      contentType: contentType,
+      throw: false,
+    });
+  } catch (e) {
+    return rethrowWithContext("obsidianFetch", input, init, e);
+  }
 
   const resHeaders = new Headers();
   for (const key of Object.keys(res.headers)) {
@@ -101,10 +106,53 @@ export const obsidianFetch = async (
   } as Response;
 };
 
+const describeReq = (input: RequestInfo | URL, init?: RequestInit) => {
+  const url =
+    typeof input === "string" ? input : (input as any).url || input.toString();
+  return `${init?.method || "GET"} ${url}`;
+};
+
+/**
+ * Rethrow with the request that died attached.
+ *
+ * A bare WebKit `TypeError: Load failed` carries no url, no status and no
+ * usable stack after minification, and main.ts shows `error.message` verbatim
+ * in a Notice, so the user ends up staring at two words. Naming the request
+ * turns that Notice into something diagnosable.
+ */
+const rethrowWithContext = (
+  via: string,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  e: unknown
+): never => {
+  const err = e as any;
+  const detail = `${err?.name ?? "Error"}: ${err?.message ?? String(e)}`;
+  const wrapped = new Error(
+    `[${via}] ${describeReq(input, init)} -> ${detail}`
+  );
+  (wrapped as any).cause = e;
+  throw wrapped;
+};
+
+// read it off globalThis so a bare `fetch` identifier here can never resolve
+// back to platformSafeFetch and recurse
 const nativeFetch = async (
   input: RequestInfo | URL,
   init?: RequestInit
-): Promise<Response> => await fetch(input, init);
+): Promise<Response> => await globalThis.fetch(input, init);
+
+/**
+ * Whether this platform needs every request tunnelled through `requestUrl`.
+ *
+ * `Platform.isIosApp` alone is too narrow to rely on: it has to hold for iPadOS
+ * as well, and a device reporting itself as a desktop browser would slip
+ * through. So treat "a mobile app that is not the Android one" as iOS-like,
+ * which keeps desktop and Android on exactly the native `fetch` path they are
+ * known to work with (see commit 74691aa).
+ */
+export const needsObsidianFetch = (): boolean =>
+  Platform.isIosApp || (Platform.isMobileApp && !Platform.isAndroidApp);
 
 /**
  * Use this instead of the global `fetch` for any call to a remote cloud API.
@@ -116,10 +164,16 @@ const nativeFetch = async (
 export const platformSafeFetch = async (
   input: RequestInfo | URL,
   init?: RequestInit
-): Promise<Response> =>
-  Platform.isIosApp
-    ? await obsidianFetch(input, init)
-    : await nativeFetch(input, init);
+): Promise<Response> => {
+  if (needsObsidianFetch()) {
+    return await obsidianFetch(input, init);
+  }
+  try {
+    return await nativeFetch(input, init);
+  } catch (e) {
+    return rethrowWithContext("nativeFetch", input, init, e);
+  }
+};
 
 /**
  * Whether the error is a low level "the request never completed" failure,

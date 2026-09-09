@@ -108,6 +108,7 @@ import {
   upsertPluginVersionByVault,
 } from "./localdb";
 import { changeMobileStatusBar } from "./misc";
+import { needsObsidianFetch } from "./obsFetch";
 import { DEFAULT_PROFILER_CONFIG, Profiler } from "./profiler";
 import { RemotelySaveSettingTab } from "./settings";
 import { SyncAlgoV3Modal } from "./syncAlgoV3Notice";
@@ -395,12 +396,24 @@ export default class RemotelySavePlugin extends Plugin {
 
     const errNotifyFunc = async (s: SyncTriggerSourceType, error: Error) => {
       console.error(error);
+      // A bare network rejection reads as just "Load failed" (WebKit) or
+      // "Failed to fetch" (Chromium), which tells the user nothing and is
+      // useless in a bug report. If nothing already tagged the message with the
+      // failing request, fall back to the error name plus its first stack frame.
+      const describeErr = (e: any) => {
+        const msg = e?.message ?? "error while sync";
+        if (typeof msg === "string" && msg.includes("] ")) {
+          return msg;
+        }
+        const frame = `${e?.stack ?? ""}`.split(/\r?\n/)[1]?.trim();
+        return `${e?.name ?? "Error"}: ${msg}${frame ? ` @ ${frame}` : ""}`;
+      };
       if (error instanceof AggregateError) {
         for (const e of error.errors) {
-          getNotice(s, e.message, 10 * 1000);
+          getNotice(s, describeErr(e), 10 * 1000);
         }
       } else {
-        getNotice(s, error?.message ?? "error while sync", 10 * 1000);
+        getNotice(s, describeErr(error), 10 * 1000);
       }
     };
 
@@ -515,6 +528,9 @@ export default class RemotelySavePlugin extends Plugin {
 
   async onload() {
     console.info(`loading plugin ${this.manifest.id}`);
+    console.info(
+      `remotely-save platform: isMobileApp=${Platform.isMobileApp} isIosApp=${Platform.isIosApp} isAndroidApp=${Platform.isAndroidApp} isDesktopApp=${Platform.isDesktopApp} tunnelViaRequestUrl=${needsObsidianFetch()}`
+    );
 
     const { iconSvgSyncWait, iconSvgSyncRunning, iconSvgLogs } = getIconSvg();
 
@@ -1650,14 +1666,46 @@ export default class RemotelySavePlugin extends Plugin {
       this.settings.pro.refreshToken = "dummy";
       this.settings.pro.email = "free-user@remotely-save.local";
       this.settings.pro.enabledProFeatures = [
-        { featureName: "feature-smart_conflict", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
-        { featureName: "feature-google_drive", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
-        { featureName: "feature-onedrive_full", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
-        { featureName: "feature-box", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
-        { featureName: "feature-pcloud", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
-        { featureName: "feature-yandex_disk", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
-        { featureName: "feature-koofr", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
-        { featureName: "feature-azure_blob_storage", enableAtTimeMs: 0 as unknown as bigint, expireAtTimeMs: 4102444800000 as unknown as bigint },
+        {
+          featureName: "feature-smart_conflict",
+          enableAtTimeMs: 0 as unknown as bigint,
+          expireAtTimeMs: 4102444800000 as unknown as bigint,
+        },
+        {
+          featureName: "feature-google_drive",
+          enableAtTimeMs: 0 as unknown as bigint,
+          expireAtTimeMs: 4102444800000 as unknown as bigint,
+        },
+        {
+          featureName: "feature-onedrive_full",
+          enableAtTimeMs: 0 as unknown as bigint,
+          expireAtTimeMs: 4102444800000 as unknown as bigint,
+        },
+        {
+          featureName: "feature-box",
+          enableAtTimeMs: 0 as unknown as bigint,
+          expireAtTimeMs: 4102444800000 as unknown as bigint,
+        },
+        {
+          featureName: "feature-pcloud",
+          enableAtTimeMs: 0 as unknown as bigint,
+          expireAtTimeMs: 4102444800000 as unknown as bigint,
+        },
+        {
+          featureName: "feature-yandex_disk",
+          enableAtTimeMs: 0 as unknown as bigint,
+          expireAtTimeMs: 4102444800000 as unknown as bigint,
+        },
+        {
+          featureName: "feature-koofr",
+          enableAtTimeMs: 0 as unknown as bigint,
+          expireAtTimeMs: 4102444800000 as unknown as bigint,
+        },
+        {
+          featureName: "feature-azure_blob_storage",
+          enableAtTimeMs: 0 as unknown as bigint,
+          expireAtTimeMs: 4102444800000 as unknown as bigint,
+        },
       ];
       needSave = true;
     }
